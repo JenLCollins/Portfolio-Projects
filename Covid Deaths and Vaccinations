@@ -1,0 +1,153 @@
+/*
+
+Covid 19 Data Exploration 
+Skills used: Joins, CTE's, Temp Tables, Windows Functions, Aggregate Functions, Creating Views, Converting Data Types
+
+*/
+
+
+--Check data for import accuracy and order by location then date
+SELECT *
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+ORDER BY 3, 4
+
+SELECT *
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidVaccinations`
+ORDER BY 3, 4
+
+--Select data we are going to be starting with
+SELECT location, date, total_cases, new_cases, total_deaths, population
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+order by 1, 2
+
+--Looking at Total Cases vs Total Deaths to get Death Percentage
+--Shows likelihood of dying if you contract covid
+SELECT location, date, total_cases, total_deaths, (total_deaths/Total_cases)*100 as DeathPercentage
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+order by 1, 2
+
+--Looking at Total Cases vs Total Deaths to get Death Percentage US ONLY
+SELECT location, date, total_cases, total_deaths, (total_deaths/Total_cases)*100 as DeathPercentage
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+WHERE location = 'United States'
+order by 1, 2
+
+--Looking at total cases vs population
+--Shows what percent of the population was infected with covid
+SELECT location, date, population, total_cases, (total_cases/population)*100 as InfectionRate
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+order by 1, 2
+
+--Countries with highest infection rate compared to population
+SELECT location, population, MAX(total_cases) AS HighestInfectionCount, MAX((total_cases/population))*100 as InfectionRate
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+GROUP BY location, population
+order by InfectionRate DESC
+
+--Countries with highest death count per population
+--Cast Total Deaths as Integer so it is read as numeric
+--Remove locations where continent is null 
+SELECT location, MAX(CAST(total_deaths AS INT)) AS TotalDeathCount
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+WHERE continent is not null
+GROUP BY location
+order by TotalDeathCount DESC
+
+--Break death count down by continent instead of country 
+--Continents with the highest death count per population
+SELECT continent, MAX(CAST(total_deaths AS INT)) AS TotalDeathCount
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+WHERE continent is not null
+GROUP BY continent
+order by TotalDeathCount DESC
+
+--GLOBAL NUMBERS
+--Death Percentage worldwide by date (not grouped by location or continent)
+SELECT date, SUM(new_cases) AS TotalCases, SUM(CAST(new_deaths as int)) AS TotalDeaths, SUM(CAST(new_deaths as int))/SUM(new_cases)*100 AS DeathPercentage
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+WHERE continent is not null
+GROUP BY date
+ORDER BY 1, 2
+
+--Overall death percentage worldwide for all days
+SELECT SUM(new_cases) AS TotalCases, SUM(CAST(new_deaths as int)) AS TotalDeaths, SUM(CAST(new_deaths as int))/SUM(new_cases)*100 AS DeathPercentage
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+WHERE continent is not null
+ORDER BY 1, 2
+
+--Join Death table with Vax Table
+SELECT *
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths` dea
+JOIN `sql-data-exploration-covid.CovidWorldwide.CovidVaccinations` vac
+  ON dea.location = vac.location
+  AND dea.date = vac.date
+
+--Total population vs vaccinations
+--Shows percentage of population that has received at least one vaccination
+SELECT dea.continent, dea.location, dea.date,dea.population, vac.new_vaccinations
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths` dea
+JOIN `sql-data-exploration-covid.CovidWorldwide.CovidVaccinations` vac
+  ON dea.location = vac.location
+  AND dea.date = vac.date 
+WHERE dea.continent is not null
+ORDER BY 1, 2, 3
+
+--Get a rolling count of new vaccinations caluclated by partitioning by location
+SELECT dea.continent, dea.location, dea.date,dea.population, vac.new_vaccinations
+, SUM(CAST(vac.new_vaccinations as int)) OVER (PARTITION BY dea.location ORDER BY dea.location --break the count down by country location
+  , dea.date) AS RollingPeopleVaccinated
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths` dea
+JOIN `sql-data-exploration-covid.CovidWorldwide.CovidVaccinations` vac
+  ON dea.location = vac.location
+  AND dea.date = vac.date 
+WHERE dea.continent is not null
+ORDER BY 1, 2, 3
+
+--Use CTE to perform calculation in previous query (this allows us to easily use the rolling count for new calculations)
+WITH PopvsVac AS 
+(
+SELECT dea.continent, dea.location, dea.date,dea.population, vac.new_vaccinations
+, SUM(CAST(vac.new_vaccinations as int)) OVER (PARTITION BY dea.location ORDER BY dea.location --break the count down by country location
+  , dea.date) AS RollingPeopleVaccinated
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths` dea
+JOIN `sql-data-exploration-covid.CovidWorldwide.CovidVaccinations` vac
+  ON dea.location = vac.location
+  AND dea.date = vac.date 
+WHERE dea.continent is not null
+)
+SELECT *, (RollingPeopleVaccinated/Population)*100 AS RollingPercentVax
+FROM PopVsVac
+
+--Use temp table to perform partition by calculation in previous query
+CREATE TABLE IF NOT EXISTS `sql-data-exploration-covid.CovidWorldwide.PercentPopulationVaccinated`
+(
+continent string,
+location string,
+date datetime,
+population numeric,
+new_vaccinations numeric,
+RollingPeopleVaccinated numeric
+);
+INSERT INTO `sql-data-exploration-covid.CovidWorldwide.PercentPopulationVaccinated`
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
+, SUM(CAST(vac.new_vaccinations as int)) OVER (PARTITION BY dea.location ORDER BY dea.location --break the count down by country location
+  , dea.date) AS RollingPeopleVaccinated
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths` dea
+JOIN `sql-data-exploration-covid.CovidWorldwide.CovidVaccinations` vac
+  ON dea.location = vac.location
+  AND dea.date = vac.date 
+--WHERE dea.continent is not null
+
+Select *, (RollingPeopleVaccinated/Population)*100
+From `sql-data-exploration-covid.CovidWorldwide.PercentPopulationVaccinated`
+
+--Create view to store for later data visualizations
+Create View `sql-data-exploration-covid.CovidWorldwide.PercentPopulationVaccinated` as
+SELECT dea.continent, dea.location, dea.date, dea.population, vac.new_vaccinations
+, SUM(CAST(vac.new_vaccinations as int)) OVER (PARTITION BY dea.location ORDER BY dea.location --break the count down by country location
+  , dea.date) AS RollingPeopleVaccinated
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths` dea
+JOIN `sql-data-exploration-covid.CovidWorldwide.CovidVaccinations` vac
+  ON dea.location = vac.location
+  AND dea.date = vac.date 
+WHERE dea.continent is not null
