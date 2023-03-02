@@ -1,0 +1,34 @@
+/*
+Queries used for Tableau Project
+*/
+
+
+--1.  Global Death Count
+SELECT SUM(new_cases) AS TotalCases, SUM(CAST(new_deaths as int)) AS TotalDeaths, SUM(CAST(new_deaths as int))/SUM(new_cases)*100 AS DeathPercentage
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+WHERE continent is not null
+--GROUP BY date
+ORDER BY 1, 2
+
+
+--2.  Death Count by Continent
+SELECT location, SUM(CAST(new_deaths AS INT)) AS TotalDeathCount
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+WHERE continent is null
+and location not in ('World', 'European Union', 'International', 'High income', 'Upper middle income', 'Lower middle income', 'Low income')
+GROUP BY location
+order by TotalDeathCount DESC
+
+
+--3.  Percent Population Infected by Country
+SELECT location, population, MAX(total_cases) AS HighestInfectionCount, MAX((total_cases/population))*100 as InfectionRate
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+GROUP BY location, population
+order by InfectionRate DESC
+
+
+--4.  Percent Population Infected (United States, United Kingdon, China, India, Mexico)
+SELECT location, population, date, MAX(total_cases) AS HighestInfectionCount, MAX((total_cases/population))*100 as InfectionRate
+FROM `sql-data-exploration-covid.CovidWorldwide.CovidDeaths`
+GROUP BY location, population, date
+order by InfectionRate DESC
